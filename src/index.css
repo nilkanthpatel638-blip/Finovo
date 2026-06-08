@@ -1,0 +1,116 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Poppins:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply font-sans bg-slate-50 text-slate-900 transition-colors duration-300 min-h-screen overflow-x-hidden;
+  }
+
+  body.dark {
+    @apply bg-navy-darker text-slate-100;
+  }
+}
+
+/* Glassmorphism Styles */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+}
+
+.dark .glass-panel {
+  background: rgba(10, 21, 36, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.glass-panel-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-panel-hover:hover {
+  background: rgba(255, 255, 255, 0.85);
+  border-color: rgba(255, 255, 255, 0.6);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px -10px rgba(0, 0, 0, 0.05);
+}
+
+.dark .glass-panel-hover:hover {
+  background: rgba(15, 30, 52, 0.8);
+  border-color: rgba(16, 185, 129, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px -10px rgba(16, 185, 129, 0.1);
+}
+
+/* Glowing card headers & overlays */
+.glow-emerald {
+  box-shadow: 0 0 40px -10px rgba(16, 185, 129, 0.15);
+}
+
+.dark .glow-emerald {
+  box-shadow: 0 0 40px -10px rgba(16, 185, 129, 0.25);
+}
+
+.glow-gold {
+  box-shadow: 0 0 40px -10px rgba(244, 180, 0, 0.1);
+}
+
+.dark .glow-gold {
+  box-shadow: 0 0 40px -10px rgba(244, 180, 0, 0.2);
+}
+
+.glow-navy {
+  box-shadow: 0 0 40px -10px rgba(11, 31, 58, 0.15);
+}
+
+.dark .glow-navy {
+  box-shadow: 0 0 40px -10px rgba(52, 211, 153, 0.05);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.15);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
+
+/* Circular Progress Animation */
+@keyframes progress-spin {
+  from {
+    stroke-dashoffset: 282.6;
+  }
+}
+
+.circular-progress-bar {
+  transition: stroke-dashoffset 0.8s ease-in-out;
+}
+
+/* Custom Hide Scrollbar for Drag Panels */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
