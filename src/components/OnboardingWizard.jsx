@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { FinanceContext } from '../context/FinanceContext';
 import { GlassPanel } from './GlassPanel';
 import { Icon } from './Icon';
@@ -21,6 +21,18 @@ export const OnboardingWizard = () => {
   const [budgetShopping, setBudgetShopping] = useState('');
   const [budgetBills, setBudgetBills] = useState('');
   const [budgetEntertainment, setBudgetEntertainment] = useState('');
+
+  // Automatically calculate budgets when income changes
+  useEffect(() => {
+    const inc = Number(income);
+    if (inc > 0) {
+      setBudgetRent(Math.round(inc * 0.30).toString());
+      setBudgetFood(Math.round(inc * 0.15).toString());
+      setBudgetShopping(Math.round(inc * 0.10).toString());
+      setBudgetBills(Math.round(inc * 0.10).toString());
+      setBudgetEntertainment(Math.round(inc * 0.05).toString());
+    }
+  }, [income]);
 
   // Goals state
   const [goalName, setGoalName] = useState('Emergency Fund');
@@ -264,6 +276,10 @@ export const OnboardingWizard = () => {
             <div className="space-y-1.5">
               <h2 className="text-2xl font-bold">Draft your monthly budgets</h2>
               <p className="text-xs text-slate-500">Set limits for essential spending categories.</p>
+              <div className="p-3 bg-emerald/10 border border-emerald/20 text-emerald rounded-xl text-[10.5px] font-semibold flex items-center space-x-1.5 mt-2">
+                <Icon name="Sparkles" size={14} className="text-emerald animate-pulse" />
+                <span>Budgets pre-filled automatically using standard financial ratios based on your monthly income. You can customize them below.</span>
+              </div>
             </div>
 
             <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">

@@ -5,7 +5,7 @@ import { Icon } from '../components/Icon';
 import { formatIndianRupees } from '../utils/financeUtils';
 
 export const Assistant = () => {
-  const { transactions, investments, budgets, goals, currency } = useContext(FinanceContext);
+  const { transactions, investments, budgets, goals, currency, startingBalance } = useContext(FinanceContext);
   const [messages, setMessages] = useState([
     {
       id: 'm1',
@@ -41,68 +41,182 @@ export const Assistant = () => {
   // Helper response logic
   const getAIResponse = (input) => {
     const text = input.toLowerCase();
+
+    // 1. Calculate stats from actual context data
+    const totalIncomes = transactions.filter(t => t.type === 'income').reduce((a, b) => a + b.amount, 0);
+    const totalExpenses = transactions.filter(t => t.type === 'expense').reduce((a, b) => a + b.amount, 0);
     
-    if (text.includes('analyze') && text.includes('expense')) {
-      // Find top expense category
-      const categoriesMap = {};
-      transactions
-        .filter(t => t.type === 'expense' && t.date.startsWith('2026-06'))
-        .forEach(t => {
-          categoriesMap[t.category] = (categoriesMap[t.category] || 0) + t.amount;
-        });
-      
-      let topCategory = 'None';
-      let topValue = 0;
-      Object.keys(categoriesMap).forEach(c => {
-        if (categoriesMap[c] > topValue) {
-          topValue = categoriesMap[c];
-          topCategory = c;
+    // Find current month income and expenses dynamically
+    const currentMonthStr = new Date().toISOString().substring(0, 7);
+    const thisMonthIncomes = transactions.filter(t => t.type === 'income' && t.date.startsWith(currentMonthStr)).reduce((a, b) => a + b.amount, 0) || totalIncomes || 85000;
+    const thisMonthExpenses = transactions.filter(t => t.type === 'expense' && t.date.startsWith(currentMonthStr)).reduce((a, b) => a + b.amount, 0) || totalExpenses || 0;
+    const thisMonthSavings = Math.max(0, thisMonthIncomes - thisMonthExpenses);
+
+    // Group expenses by category
+    const categoriesMap = {};
+    transactions
+      .filter(t => t.type === 'expense')
+      .forEach(t => {
+        categoriesMap[t.category] = (categoriesMap[t.category] || 0) + t.amount;
+      });
+
+    // Find highest expense category
+    let topCategory = 'None';
+    let topValue = 0;
+    Object.keys(categoriesMap).forEach(c => {
+      if (categoriesMap[c] > topValue) {
+        topValue = categoriesMap[c];
+        topCategory = c;
+      }
+    });
+
+    // Investment holdings details
+    const totalInvested = investments.reduce((a, b) => a + b.investedAmount, 0);
+    const totalCurrentVal = investments.reduce((a, b) => a + b.currentValue, 0);
+    const totalGainLoss = totalCurrentVal - totalInvested;
+    const gainLossPercent = totalInvested > 0 ? ((totalGainLoss / totalInvested) * 100).toFixed(1) : '0';
+
+    // Group investments by asset class
+    const assetClasses = {};
+    investments.forEach(i => {
+      assetClasses[i.type] = (assetClasses[i.type] || 0) + i.currentValue;
+    });
+
+    if (text.includes('analyze') && (text.includes('expense') || text.includes('spending') || text.includes('ledger'))) {
+      if (transactions.filter(t => t.type === 'expense').length === 0) {
+        return `I analyzed your transaction records and found **0 expense entries**. 
+
+💡 **Observation**: Your ledger is currently empty. Go to the **Expense Tracker** or record a transaction directly from the dashboard so that I can analyze your spending patterns!`;
+      }
+
+      let breakDownStr = '';
+      Object.keys(categoriesMap).forEach(cat => {
+        const spent = categoriesMap[cat];
+        const cap = budgets[cat] || 0;
+        const percentageOfBudget = cap > 0 ? Math.round((spent / cap) * 100) : null;
+        breakDownStr += `• **${cat}**: ${formatIndianRupees(spent, currency)} ${
+          percentageOfBudget !== null ? `(${percentageOfBudget}% of budget)` : '(No budget cap)'
+        }\n`;
+      });
+
+      return `Here is a comprehensive data analysis of your expenses:
+• **Total Expenses Logged**: ${formatIndianRupees(totalExpenses, currency)}
+• **Highest Spending Category**: **${topCategory}** (${formatIndianRupees(topValue, currency)})
+• **Savings Rate this Month**: **${Math.round((thisMonthSavings / thisMonthIncomes) * 100)}%** (Income: ${formatIndianRupees(thisMonthIncomes, currency)} | Expenses: ${formatIndianRupees(thisMonthExpenses, currency)})
+
+**Category-wise Breakdown**:
+${breakDownStr}
+
+💡 **Analysis & Feedback**:
+${
+  topValue > 0 
+    ? `Your largest cash outflow is under **${topCategory}**. If you can reduce this specific category spending by 10%, you could allocate an extra **${formatIndianRupees(topValue * 0.1, currency)}** to your savings or investment SIPs.`
+    : `You have zero recorded expenses. Great job keeping outflows at zero, or go log your entries to see dynamic tips!`
+}`;
+    }
+
+    if (text.includes('budget') || text.includes('create') && text.includes('monthly') || text.includes('recommend') && text.includes('ratio')) {
+      const needs = Math.round(thisMonthIncomes * 0.5);
+      const wants = Math.round(thisMonthIncomes * 0.3);
+      const invest = Math.round(thisMonthIncomes * 0.2);
+
+      let activeBudgetsStr = '';
+      let totalBudgetLimit = 0;
+      Object.keys(budgets).forEach(bName => {
+        if (budgets[bName] > 0) {
+          activeBudgetsStr += `• **${bName}**: ${formatIndianRupees(budgets[bName], currency)}\n`;
+          totalBudgetLimit += budgets[bName];
         }
       });
 
-      return `Here is an analysis of your June expenses:
-• Total June Expenses: ${formatIndianRupees(expense)}
-• Highest Expense Category: **${topCategory}** (${formatIndianRupees(topValue)})
-• Current Savings Rate: **${Math.round((savings / income) * 100)}%** of your income.
+      return `Analyzing your budget metrics for your monthly income of **${formatIndianRupees(thisMonthIncomes, currency)}**:
 
-💡 **Observation**: Your savings rate is healthy, but spending on *${topCategory}* accounts for a substantial chunk of your budget. Consider setting a strict limit on *${topCategory}* to unlock an extra ₹2,000–₹5,000 in monthly SIP savings.`;
+### 📊 Recommended 50/30/20 Standard Ratios:
+1. **Needs (50%)**: **${formatIndianRupees(needs, currency)}** (Rent, Utilities, Bills, Groceries)
+2. **Wants (30%)**: **${formatIndianRupees(wants, currency)}** (Shopping, Dining Out, Entertainment)
+3. **Savings/Investments (20%)**: **${formatIndianRupees(invest, currency)}** (Mutual Funds, Stocks, Goals)
+
+### 🛠️ Your Current Configured Budget Limits:
+${activeBudgetsStr || '• *No budget limits set yet! Go to Budget Planner to configure caps.*\n'}
+* **Total budgeted limit**: ${formatIndianRupees(totalBudgetLimit, currency)} (${Math.round((totalBudgetLimit / thisMonthIncomes) * 100)}% of income)
+
+💡 **Analysis & Recommendation**:
+${
+  totalBudgetLimit > thisMonthIncomes
+    ? `⚠️ **Warning**: Your configured budget caps sum up to **${formatIndianRupees(totalBudgetLimit, currency)}**, which is **greater than** your monthly income of **${formatIndianRupees(thisMonthIncomes, currency)}**. This structure is unsustainable. I recommend trimming down wants (like Shopping/Entertainment) to ensure your limits fit within your monthly cash flow.`
+    : `Your configured budget limits are healthy and total **${formatIndianRupees(totalBudgetLimit, currency)}** (${Math.round((totalBudgetLimit / thisMonthIncomes) * 100)}% of income). This successfully reserves **${formatIndianRupees(thisMonthIncomes - totalBudgetLimit, currency)}** for investments and savings!`
+}`;
     }
 
-    if (text.includes('budget') || text.includes('create') && text.includes('monthly')) {
-      const needs = Math.round(income * 0.5);
-      const wants = Math.round(income * 0.3);
-      const invest = Math.round(income * 0.2);
-      
-      return `Based on your monthly income of **${formatIndianRupees(income)}**, I recommend applying the standard **50/30/20 Budgeting Rule**:
+    if (text.includes('suggest') || text.includes('investment') || text.includes('allocation') || text.includes('portfolio')) {
+      if (investments.length === 0) {
+        return `I analyzed your portfolio records and found **0 active investment holdings**.
 
-1. **Needs (50%)**: **${formatIndianRupees(needs)}**
-   *Use for: Rent, EMIs, Utilities, Groceries, Insurance.*
-2. **Wants (30%)**: **${formatIndianRupees(wants)}**
-   *Use for: Dining out, Shopping, Movie tickets, Travel.*
-3. **Investments & Savings (20%)**: **${formatIndianRupees(invest)}**
-   *Use for: Mutual Fund SIPs, Stocks, EPF/PPF, and Emergency Fund.*
+💡 **Investment Allocation Guidance**:
+To start growing your wealth, I recommend beginning with a simple **Index Mutual Fund SIP**. 
+You can start with as little as ₹500–₹1,000 per month in a low-cost Nifty 50 Index Fund. Go to the **Investments** tab to log your principal outlays when you purchase mutual funds or stocks!`;
+      }
 
-Currently, you are spending **${formatIndianRupees(expense)}** (${Math.round((expense/income)*100)}%), which is close to your limit. Try cutting down discretionary shopping this week.`;
+      let holdingsStr = '';
+      investments.forEach(i => {
+        const change = i.currentValue - i.investedAmount;
+        const changePct = i.investedAmount > 0 ? ((change / i.investedAmount) * 100).toFixed(1) : '0';
+        holdingsStr += `• **${i.name}** (${i.type}): Invested: ${formatIndianRupees(i.investedAmount, currency)} | Current Value: ${formatIndianRupees(i.currentValue, currency)} (${Number(change) >= 0 ? '+' : ''}${changePct}%)\n`;
+      });
+
+      let classBreakdownStr = '';
+      Object.keys(assetClasses).forEach(ac => {
+        const pct = Math.round((assetClasses[ac] / totalCurrentVal) * 100);
+        classBreakdownStr += `• **${ac}**: ${formatIndianRupees(assetClasses[ac], currency)} (${pct}% of portfolio)\n`;
+      });
+
+      return `Here is a complete, live analysis of your investment portfolio:
+• **Total Invested Cost**: ${formatIndianRupees(totalInvested, currency)}
+• **Current Valuation**: ${formatIndianRupees(totalCurrentVal, currency)}
+• **Absolute Gains/Losses**: **${totalGainLoss >= 0 ? '+' : ''}${formatIndianRupees(totalGainLoss, currency)} (${totalGainLoss >= 0 ? '+' : ''}${gainLossPercent}%)**
+
+### 📂 Asset Class Distribution:
+${classBreakdownStr}
+
+### 📝 Current Holdings Breakdown:
+${holdingsStr}
+
+💡 **AI Portfolio Recommendation**:
+${
+  assetClasses['Crypto'] && (assetClasses['Crypto'] / totalCurrentVal) > 0.1
+    ? `⚠️ **Portfolio Risk Alert**: Your Crypto holdings account for **${Math.round((assetClasses['Crypto']/totalCurrentVal)*100)}%** of your wealth. This is highly speculative. I suggest reallocating capital into Equity Mutual Funds or Gold to reduce volatility.`
+    : `Your portfolio allocation looks healthy! Diversifying across Mutual Funds and Equity buffers you against sector-specific down-cycles. Consider adding physical/sovereign Gold (SGB) if you wish to hedge against inflation.`
+}`;
     }
 
-    if (text.includes('suggest') || text.includes('investment') || text.includes('allocation')) {
-      return `Here is a review of your current portfolio allocation:
-• Equity & Mutual Funds: **65%** (High growth potential)
-• Gold & Fixed Deposits: **18%** (Provides portfolio buffer)
-• Liquid Cash & Crypto: **17%** (High liquidity / risk)
-
-💡 **Recommendation**: For a balanced profile, consider allocating:
-1. **60% in Equity Mutual Funds** (SIPs in Nifty Index, Flexi-cap & Small-cap).
-2. **20% in Sovereign Gold Bonds (SGB)** or digital gold to hedge inflation.
-3. **15% in Debt instruments** (PPF for tax-free compounding, Fixed Deposits).
-4. **5% in Crypto** or speculative equity only if you have a high risk tolerance.`;
+    if (text.includes('save') || text.includes('money') || text.includes('saving') || text.includes('growth')) {
+      return `Based on your live profile, here is a custom financial savings advice checklist:
+1. **Savings Rate**: You are currently saving **${formatIndianRupees(thisMonthSavings, currency)}** this month (${Math.round((thisMonthSavings / thisMonthIncomes) * 100)}% of income). Aim to maintain a rate above **20%**.
+2. **SIP Automation**: Set up auto-debits for your mutual funds on the 2nd of every month, immediately following your salary credits, ensuring you "pay yourself first."
+3. **Emergency Fund Buffer**: Make sure to build a safety reserve. A standard buffer covers **6 months of essential expenses** (${formatIndianRupees(Math.round(thisMonthExpenses * 6), currency)}). Check your active goals to track this!`;
     }
 
-    if (text.includes('save') || text.includes('money')) {
-      return `Here are three highly actionable ways to boost your savings in India:
-1. **Automate Savings on Payday**: Set up automatic mutual fund SIP transfers on the 2nd of every month, right after salary credit.
-2. **Audit Subscriptions**: Cancel gym memberships or video streaming platforms (Netflix, Hotstar) you haven't accessed in 30 days.
-3. **The 30-Day Delay Rule**: When planning non-essential purchases (e.g. new electronics, designer wear), wait 30 days. If the urge persists, buy it. This eliminates impulsive buying.`;
+    if (text.includes('goal') || text.includes('target') || text.includes('milestone')) {
+      if (goals.length === 0) {
+        return `I analyzed your goals ledger and found **0 active savings targets**.
+
+💡 **Why set goals?**
+Setting specific goals (like an Emergency Fund, House Downpayment, or Vehicle purchase) with clear target values and deadlines helps keep you motivated and structured.
+Go to the **Goals** tab to set your first target!`;
+      }
+
+      let goalsStr = '';
+      goals.forEach(g => {
+        const percent = Math.round((g.savedAmount / g.targetAmount) * 100);
+        goalsStr += `• **${g.name}**: Saved **${formatIndianRupees(g.savedAmount, currency)}** of **${formatIndianRupees(g.targetAmount, currency)}** (${percent}% complete | Deadline: ${g.deadline})\n`;
+      });
+
+      return `Here is a progress report on your active savings goals:
+
+${goalsStr}
+
+💡 **Actionable Tip**:
+To hit your deadlines on time, automate your monthly savings contributions. If you're running behind on a target, consider extending the deadline or cutting back on wants to bolster monthly contributions.`;
     }
 
     if (text.includes('compound') || text.includes('interest')) {
@@ -116,7 +230,7 @@ Currently, you are spending **${formatIndianRupees(expense)}** (${Math.round((ex
 🚀 **The key is Time**: The longer you keep your money invested, the steeper the exponential growth curve. Starting a SIP at age 22 instead of 30 can double your ultimate retirement corpus!`;
     }
 
-    if (text.includes('debt') || text.includes('reduce') || text.includes('loan')) {
+    if (text.includes('debt') || text.includes('reduce') || text.includes('loan') || text.includes('avalanche') || text.includes('snowball')) {
       return `To reduce debt efficiently, use one of these two standard methods:
 1. **The Avalanche Method (Recommended)**: List all loans by interest rate. Pay the minimum on all, and dump every extra rupee into the loan with the *highest interest rate* (e.g. credit card debt, personal loans). This saves the most money.
 2. **The Snowball Method**: List loans by principal amount. Pay off the *smallest loan first* to gain psychological momentum.
@@ -124,11 +238,18 @@ Currently, you are spending **${formatIndianRupees(expense)}** (${Math.round((ex
 Avoid taking credit card EMIs for discretionary spending (shopping, dining out) as interest rates range from 15% to 42% annually.`;
     }
 
-    return `I appreciate your question! I can help you with specific tasks. Try clicking one of the suggestions above or ask about:
-- "Explain SIP vs Lumpsum"
-- "How much emergency fund do I need?"
-- "Analyze my expenses"
-- "Tax regime comparison guidance"`;
+    // Default response: dynamic system summary
+    return `I parsed your Finovo account details. Here is a live summary of your financial profile:
+• **Total Balance (Cash/Bank holdings)**: ${formatIndianRupees(startingBalance + totalIncomes - totalExpenses, currency)}
+• **Monthly Income**: ${formatIndianRupees(thisMonthIncomes, currency)}
+• **Month Outflows**: ${formatIndianRupees(thisMonthExpenses, currency)}
+• **Investment Assets**: ${formatIndianRupees(totalCurrentVal, currency)}
+• **Active Savings Goals**: ${goals.length}
+
+How can I help you analyze these details today? You can ask me to:
+1. "Analyze my expenses" (find top category and budget utilization)
+2. "Create my monthly budget" (review configured caps and ratios)
+3. "Suggest investment allocation" (check absolute returns and asset splits)`;
   };
 
   const handleSendMessage = (textToSend) => {
