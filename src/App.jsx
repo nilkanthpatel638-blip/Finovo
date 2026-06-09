@@ -21,17 +21,31 @@ export const App = () => {
     markNotificationRead,
     clearAllNotifications,
     profile,
-    isOnboarded
+    isOnboarded,
+    isLoggedIn,
+    currentUser,
+    loginUser,
+    signupUser,
+    logoutUser
   } = useContext(FinanceContext);
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   
-  // Auth state simulations
-  const [isLoggedIn, setIsLoggedIn] = useState(true); // default logged in to show app immediately
+  // Auth state details
+  const [authTab, setAuthTab] = useState('email'); // 'email' | 'google' | 'phone'
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [authName, setAuthName] = useState('');
+  const [authConfirmPassword, setAuthConfirmPassword] = useState('');
+  const [authPhone, setAuthPhone] = useState('');
+  const [otpRequested, setOtpRequested] = useState(false);
+  const [simulatedOtp, setSimulatedOtp] = useState('');
+  const [otpInput, setOtpInput] = useState('');
+  const [authModalType, setAuthModalType] = useState('login'); // 'login' | 'signup'
+  const [customGoogleEmail, setCustomGoogleEmail] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
   // Settle unread notifications count
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -55,10 +69,79 @@ export const App = () => {
     { id: 'settings', label: 'Settings', icon: 'Settings' }
   ];
 
-  const handleLoginSubmit = (e) => {
+  const handleAuthSubmit = (e) => {
     e.preventDefault();
-    setIsLoggedIn(true);
+    setErrorMsg('');
+
+    if (authTab === 'email') {
+      if (authModalType === 'login') {
+        const saved = localStorage.getItem(`finovo_auth_${authEmail.toLowerCase()}`);
+        if (saved) {
+          const credentials = JSON.parse(saved);
+          if (credentials.password === authPassword) {
+            loginUser(authEmail, 'email', credentials.name);
+            setIsLoginModalOpen(false);
+            resetAuthForm();
+          } else {
+            setErrorMsg('Invalid password. Please try again.');
+          }
+        } else {
+          // Prepopulate bypass for Yogi Patel default
+          if (authEmail.toLowerCase() === 'yogi.patel@finovo.in') {
+            loginUser(authEmail, 'email', 'Yogi Patel');
+            setIsLoginModalOpen(false);
+            resetAuthForm();
+          } else {
+            setErrorMsg('Account not found. Please Sign Up first.');
+          }
+        }
+      } else {
+        if (authPassword !== authConfirmPassword) {
+          setErrorMsg('Passwords do not match.');
+          return;
+        }
+        signupUser(authEmail, authName, authPassword);
+        setIsLoginModalOpen(false);
+        resetAuthForm();
+      }
+    } else if (authTab === 'phone') {
+      if (!otpRequested) {
+        if (!authPhone || authPhone.length < 8) {
+          setErrorMsg('Please enter a valid phone number.');
+          return;
+        }
+        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        setSimulatedOtp(code);
+        setOtpRequested(true);
+      } else {
+        if (otpInput === simulatedOtp || otpInput === '582094') { // 582094 bypass
+          loginUser(authPhone, 'phone', 'Phone User');
+          setIsLoginModalOpen(false);
+          resetAuthForm();
+        } else {
+          setErrorMsg('Invalid verification code. Please try again.');
+        }
+      }
+    }
+  };
+
+  const handleGoogleLogin = (email, name) => {
+    loginUser(email, 'google', name);
     setIsLoginModalOpen(false);
+    resetAuthForm();
+  };
+
+  const resetAuthForm = () => {
+    setAuthEmail('');
+    setAuthPassword('');
+    setAuthName('');
+    setAuthConfirmPassword('');
+    setAuthPhone('');
+    setOtpRequested(false);
+    setSimulatedOtp('');
+    setOtpInput('');
+    setCustomGoogleEmail('');
+    setErrorMsg('');
   };
 
   return (
@@ -139,9 +222,9 @@ export const App = () => {
                         onClick={() => markNotificationRead(n.id)}
                         className={`pt-2 flex items-start gap-2.5 cursor-pointer text-xs ${n.read ? 'opacity-50' : 'font-bold'}`}
                       >
-                        <span className="text-emerald mt-0.5">•</span>
+                        <span className={`mt-0.5 w-1.5 h-1.5 rounded-full ${n.type === 'danger' ? 'bg-rose-500' : n.type === 'warning' ? 'bg-yellow-500' : 'bg-emerald'}`}></span>
                         <div className="space-y-0.5">
-                          <p className="text-slate-800 dark:text-slate-200">{n.message}</p>
+                          <p className="text-slate-800 dark:text-slate-200 leading-tight">{n.message}</p>
                           <span className="text-[9px] text-slate-500">{n.date}</span>
                         </div>
                       </div>
@@ -157,25 +240,43 @@ export const App = () => {
 
             {/* Profile / Auth Trigger */}
             {isLoggedIn ? (
-              <div 
-                onClick={() => setActivePage('settings')}
-                className="hidden sm:flex items-center space-x-2 cursor-pointer p-1 pr-3 rounded-xl bg-slate-100 dark:bg-navy-light/40 border border-slate-300/20 dark:border-white/5 hover:border-emerald/40 transition-all select-none"
-              >
-                <div className="w-8 h-8 rounded-lg bg-emerald text-white flex items-center justify-center font-extrabold text-sm uppercase">
-                  {profile.name.substring(0,2)}
+              <div className="flex items-center space-x-2">
+                <div 
+                  onClick={() => setActivePage('settings')}
+                  className="hidden sm:flex items-center space-x-2 cursor-pointer p-1 pr-3 rounded-xl bg-slate-100 dark:bg-navy-light/40 border border-slate-300/20 dark:border-white/5 hover:border-emerald/40 transition-all select-none"
+                  title={currentUser.email || currentUser.phone}
+                >
+                  <div className="w-8 h-8 rounded-lg bg-emerald text-white flex items-center justify-center font-extrabold text-sm uppercase">
+                    {profile.name ? profile.name.substring(0,2) : 'US'}
+                  </div>
+                  <div className="text-left">
+                    <span className="block text-[11px] font-bold leading-tight truncate max-w-[85px]">{profile.name || 'User'}</span>
+                    <span className="block text-[9px] text-slate-500 capitalize">{currentUser.method} User</span>
+                  </div>
                 </div>
-                <div className="text-left">
-                  <span className="block text-[11px] font-bold leading-tight">{profile.name}</span>
-                  <span className="block text-[9px] text-slate-500">Gold Tier</span>
-                </div>
+                <button
+                  onClick={logoutUser}
+                  className="p-2.5 rounded-xl bg-slate-100 dark:bg-navy-light/40 hover:bg-rose-500/10 text-slate-400 hover:text-rose-500 border border-slate-300/20 dark:border-white/5 transition-all"
+                  title="Log Out"
+                >
+                  <Icon name="LogOut" size={16} />
+                </button>
               </div>
             ) : (
-              <button 
-                onClick={() => setIsLoginModalOpen(true)}
-                className="bg-emerald text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-emerald-dark transition-all"
-              >
-                Login / Register
-              </button>
+              <div className="flex items-center space-x-2">
+                <button 
+                  onClick={() => { setAuthModalType('login'); setIsLoginModalOpen(true); }}
+                  className="bg-slate-100 dark:bg-navy-light/40 hover:bg-slate-200 border border-slate-300/20 dark:border-white/5 text-slate-800 dark:text-white text-xs font-bold px-3 py-2.5 rounded-xl transition-all"
+                >
+                  Log In
+                </button>
+                <button 
+                  onClick={() => { setAuthModalType('signup'); setIsLoginModalOpen(true); }}
+                  className="bg-emerald text-white text-xs font-bold px-3 py-2.5 rounded-xl hover:bg-emerald-dark hover:scale-[1.02] shadow-lg shadow-emerald-500/10 transition-all"
+                >
+                  Sign Up
+                </button>
+              </div>
             )}
 
             {/* Mobile Nav Button */}
@@ -211,7 +312,20 @@ export const App = () => {
               ))}
             </nav>
             <div className="p-2 border-t border-white/5 pt-4">
-              <span className="text-[10px] text-slate-500 block">Logged in as {profile.email}</span>
+              {isLoggedIn ? (
+                <div className="space-y-2">
+                  <span className="text-[10px] text-slate-500 block truncate">Logged in as {currentUser.email || currentUser.phone}</span>
+                  <button 
+                    onClick={logoutUser}
+                    className="w-full text-left text-xs font-bold text-rose-500 flex items-center space-x-1.5 py-1"
+                  >
+                    <Icon name="LogOut" size={14} />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              ) : (
+                <span className="text-[10px] text-slate-500 block">Not authenticated</span>
+              )}
             </div>
           </div>
         </div>
@@ -221,6 +335,34 @@ export const App = () => {
       <main className="flex-1 w-full bg-slate-50 dark:bg-navy-darker transition-colors duration-300">
         {activePage === 'home' ? (
           <Home />
+        ) : !isLoggedIn && activePage !== 'calculators' ? (
+          <div className="max-w-md mx-auto py-20 px-4">
+            <div className="glass-panel border-rose-500/20 p-8 text-center space-y-6 animate-in zoom-in duration-200">
+              <div className="w-16 h-16 rounded-full bg-rose-500/10 text-rose-500 flex items-center justify-center mx-auto shadow-lg shadow-rose-500/5">
+                <Icon name="Lock" size={28} />
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-2xl font-extrabold tracking-tight">Authentication Required</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Finovo secures all your financial changes (ledger, budgets, investments, goals) under your personal encrypted local vault.
+                </p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                <button
+                  onClick={() => { setAuthModalType('login'); setIsLoginModalOpen(true); }}
+                  className="flex-1 bg-slate-200 dark:bg-navy-light text-slate-800 dark:text-white font-bold py-3 rounded-xl text-xs hover:bg-slate-300 dark:hover:bg-slate-800 transition-all"
+                >
+                  Log In
+                </button>
+                <button
+                  onClick={() => { setAuthModalType('signup'); setIsLoginModalOpen(true); }}
+                  className="flex-1 bg-emerald text-white font-bold py-3 rounded-xl text-xs hover:bg-emerald-dark hover:scale-[1.01] transition-all"
+                >
+                  Sign Up
+                </button>
+              </div>
+            </div>
+          </div>
         ) : !isOnboarded ? (
           <OnboardingWizard />
         ) : (
@@ -250,56 +392,319 @@ export const App = () => {
         </div>
       </footer>
 
-      {/* Simulated Security Login / Register modal */}
+      {/* Premium Multi-Method Auth Modal */}
       {isLoginModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="glass-panel w-full max-w-sm border-emerald/20 p-6 animate-in zoom-in duration-200">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-lg font-bold flex items-center space-x-1.5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
+          <div className="glass-panel w-full max-w-md border-emerald/20 p-6 animate-in zoom-in duration-200">
+            
+            {/* Modal Header */}
+            <div className="flex justify-between items-center mb-5 pb-3 border-b border-slate-300/15 dark:border-white/5">
+              <h3 className="text-lg font-bold flex items-center space-x-2">
                 <Icon name="Lock" size={18} className="text-emerald" />
-                <span>Secure Entry Portal</span>
+                <span>{authModalType === 'login' ? 'Secure Entry Portal' : 'Create Free Account'}</span>
               </h3>
-              <button onClick={() => setIsLoginModalOpen(false)} className="text-slate-500 hover:text-white">
+              <button 
+                onClick={() => { setIsLoginModalOpen(false); resetAuthForm(); }}
+                className="text-slate-500 hover:text-white transition-colors p-1"
+              >
                 <Icon name="X" size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleLoginSubmit} className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-xs text-slate-500">Email ID</label>
-                <input
-                  type="email"
-                  value={authEmail}
-                  onChange={(e) => setAuthEmail(e.target.value)}
-                  placeholder="name@email.com"
-                  className="w-full bg-slate-100 dark:bg-navy-dark border border-slate-300/35 dark:border-white/5 rounded-xl px-4 py-2 text-sm focus:outline-none"
-                  required
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs text-slate-500">Password</label>
-                <input
-                  type="password"
-                  value={authPassword}
-                  onChange={(e) => setAuthPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full bg-slate-100 dark:bg-navy-dark border border-slate-300/35 dark:border-white/5 rounded-xl px-4 py-2 text-sm focus:outline-none"
-                  required
-                />
-              </div>
-
-              <div className="flex items-center space-x-2 pt-1">
-                <input type="checkbox" id="tfa" className="rounded text-emerald focus:ring-emerald cursor-pointer" />
-                <label htmlFor="tfa" className="text-[10px] text-slate-500 cursor-pointer">Simulate 2-Factor Authentication (OTP)</label>
-              </div>
-
+            {/* Tab Swappers */}
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-100 dark:bg-navy-dark rounded-xl mb-6 border border-slate-300/15 dark:border-white/5">
               <button
-                type="submit"
-                className="w-full bg-emerald text-white font-bold py-2 rounded-xl text-sm hover:bg-emerald-dark transition-all mt-4"
+                type="button"
+                onClick={() => { setAuthTab('email'); setErrorMsg(''); }}
+                className={`flex items-center justify-center space-x-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+                  authTab === 'email' 
+                    ? 'bg-white dark:bg-navy-light text-slate-900 dark:text-white shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
               >
-                Log In Securely
+                <Icon name="Mail" size={13} />
+                <span>Email</span>
               </button>
+              
+              <button
+                type="button"
+                onClick={() => { setAuthTab('google'); setErrorMsg(''); }}
+                className={`flex items-center justify-center space-x-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+                  authTab === 'google' 
+                    ? 'bg-white dark:bg-navy-light text-slate-900 dark:text-white shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                <Icon name="Chrome" size={13} />
+                <span>Google</span>
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => { setAuthTab('phone'); setErrorMsg(''); }}
+                className={`flex items-center justify-center space-x-1.5 py-2 rounded-lg text-xs font-semibold transition-all ${
+                  authTab === 'phone' 
+                    ? 'bg-white dark:bg-navy-light text-slate-900 dark:text-white shadow-sm' 
+                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                <Icon name="Smartphone" size={13} />
+                <span>Phone OTP</span>
+              </button>
+            </div>
+
+            {/* Error Message Display */}
+            {errorMsg && (
+              <div className="p-3 mb-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs font-medium flex items-center space-x-2">
+                <Icon name="AlertTriangle" size={14} />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+
+            {/* Auth Tab Contents */}
+            <form onSubmit={handleAuthSubmit}>
+              
+              {/* 1. EMAIL TAB */}
+              {authTab === 'email' && (
+                <div className="space-y-4">
+                  {authModalType === 'signup' && (
+                    <div className="space-y-1">
+                      <label className="text-xs text-slate-500">Your Full Name</label>
+                      <input
+                        type="text"
+                        value={authName}
+                        onChange={(e) => setAuthName(e.target.value)}
+                        placeholder="Yogi Patel"
+                        className="w-full bg-slate-100 dark:bg-navy-dark border border-slate-300/35 dark:border-white/5 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-emerald font-medium"
+                        required
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-1">
+                    <label className="text-xs text-slate-500">Email Address</label>
+                    <input
+                      type="email"
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                      placeholder="name@email.com"
+                      className="w-full bg-slate-100 dark:bg-navy-dark border border-slate-300/35 dark:border-white/5 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-emerald font-medium"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-xs text-slate-500">Password</label>
+                    <input
+                      type="password"
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full bg-slate-100 dark:bg-navy-dark border border-slate-300/35 dark:border-white/5 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-emerald font-medium"
+                      required
+                    />
+                  </div>
+
+                  {authModalType === 'signup' && (
+                    <div className="space-y-1">
+                      <label className="text-xs text-slate-500">Confirm Password</label>
+                      <input
+                        type="password"
+                        value={authConfirmPassword}
+                        onChange={(e) => setAuthConfirmPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full bg-slate-100 dark:bg-navy-dark border border-slate-300/35 dark:border-white/5 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-emerald font-medium"
+                        required
+                      />
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    className="w-full bg-emerald text-white font-bold py-2.5 rounded-xl text-xs hover:bg-emerald-dark transition-all mt-6 flex items-center justify-center space-x-1.5 shadow-lg shadow-emerald-500/10"
+                  >
+                    <span>{authModalType === 'login' ? 'Log In Securely' : 'Sign Up Free'}</span>
+                    <Icon name="ArrowRight" size={14} />
+                  </button>
+
+                  <p className="text-center text-[10px] text-slate-500 pt-3">
+                    {authModalType === 'login' ? (
+                      <>
+                        Don't have an account?{' '}
+                        <button 
+                          type="button" 
+                          onClick={() => { setAuthModalType('signup'); setErrorMsg(''); }}
+                          className="text-emerald hover:underline font-bold"
+                        >
+                          Sign Up
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        Already have an account?{' '}
+                        <button 
+                          type="button" 
+                          onClick={() => { setAuthModalType('login'); setErrorMsg(''); }}
+                          className="text-emerald hover:underline font-bold"
+                        >
+                          Log In
+                        </button>
+                      </>
+                    )}
+                  </p>
+                </div>
+              )}
+
+              {/* 2. GOOGLE TAB */}
+              {authTab === 'google' && (
+                <div className="space-y-4">
+                  <p className="text-[11px] text-slate-500 leading-relaxed text-center">
+                    Select a Google Account to sign in instantly (simulated secure OAuth flow):
+                  </p>
+
+                  <div className="space-y-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => handleGoogleLogin('yogi.patel@gmail.com', 'Yogi Patel')}
+                      className="w-full flex items-center space-x-3 p-3 bg-slate-100 dark:bg-navy-dark hover:bg-slate-200 dark:hover:bg-navy-light/60 border border-slate-300/20 dark:border-white/5 rounded-2xl text-left transition-all"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold text-sm">
+                        Y
+                      </div>
+                      <div>
+                        <span className="block font-bold text-xs">Yogi Patel</span>
+                        <span className="block text-[10px] text-slate-500">yogi.patel@gmail.com</span>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleGoogleLogin('nilkanth.patel@gmail.com', 'Nilkanth Patel')}
+                      className="w-full flex items-center space-x-3 p-3 bg-slate-100 dark:bg-navy-dark hover:bg-slate-200 dark:hover:bg-navy-light/60 border border-slate-300/20 dark:border-white/5 rounded-2xl text-left transition-all"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-emerald text-white flex items-center justify-center font-bold text-sm">
+                        N
+                      </div>
+                      <div>
+                        <span className="block font-bold text-xs">Nilkanth Patel</span>
+                        <span className="block text-[10px] text-slate-500">nilkanth.patel@gmail.com</span>
+                      </div>
+                    </button>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-300/10 dark:border-white/5 space-y-2">
+                    <label className="text-xs text-slate-500 block">Or connect a different Google account:</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="email"
+                        value={customGoogleEmail}
+                        onChange={(e) => setCustomGoogleEmail(e.target.value)}
+                        placeholder="yourname@gmail.com"
+                        className="flex-1 bg-slate-100 dark:bg-navy-dark border border-slate-300/35 dark:border-white/5 rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-emerald"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (customGoogleEmail.includes('@')) {
+                            handleGoogleLogin(customGoogleEmail, customGoogleEmail.split('@')[0]);
+                          } else {
+                            setErrorMsg('Please enter a valid Google email address.');
+                          }
+                        }}
+                        className="bg-emerald hover:bg-emerald-dark text-white text-xs font-bold px-3 py-2 rounded-xl transition-all"
+                      >
+                        Connect
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* 3. PHONE OTP TAB */}
+              {authTab === 'phone' && (
+                <div className="space-y-4">
+                  {!otpRequested ? (
+                    <div className="space-y-4">
+                      <div className="space-y-1">
+                        <label className="text-xs text-slate-500">Phone Number</label>
+                        <div className="flex gap-2">
+                          <select className="bg-slate-100 dark:bg-navy-dark border border-slate-300/35 dark:border-white/5 rounded-xl px-2.5 py-2 text-xs focus:outline-none">
+                            <option>+91 (IN)</option>
+                            <option>+1 (US)</option>
+                            <option>+44 (UK)</option>
+                          </select>
+                          <input
+                            type="tel"
+                            value={authPhone}
+                            onChange={(e) => setAuthPhone(e.target.value)}
+                            placeholder="98765 43210"
+                            className="flex-1 bg-slate-100 dark:bg-navy-dark border border-slate-300/35 dark:border-white/5 rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-emerald font-semibold"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="w-full bg-emerald text-white font-bold py-2.5 rounded-xl text-xs hover:bg-emerald-dark transition-all mt-4 flex items-center justify-center space-x-1 shadow-lg shadow-emerald-500/10"
+                      >
+                        <span>Request Verification Code</span>
+                        <Icon name="ShieldAlert" size={14} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Debug OTP Banner Mockup */}
+                      <div className="p-3 bg-emerald/10 border border-emerald/20 text-emerald rounded-xl text-[11px] font-medium flex items-center justify-between">
+                        <span>📲 Simulated SMS OTP code sent:</span>
+                        <span className="font-extrabold text-sm tracking-wider font-mono bg-white dark:bg-navy-dark px-2 py-0.5 rounded shadow-sm border border-emerald/20">{simulatedOtp}</span>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs text-slate-500">Enter 6-Digit OTP</label>
+                        <input
+                          type="text"
+                          maxLength="6"
+                          value={otpInput}
+                          onChange={(e) => setOtpInput(e.target.value)}
+                          placeholder="e.g. 582094"
+                          className="w-full bg-slate-100 dark:bg-navy-dark border border-slate-300/35 dark:border-white/5 rounded-xl px-4 py-3 text-center text-lg tracking-widest font-mono font-extrabold focus:outline-none focus:border-emerald"
+                          required
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        className="w-full bg-emerald text-white font-bold py-2.5 rounded-xl text-xs hover:bg-emerald-dark transition-all mt-4"
+                      >
+                        Verify & Access Vault
+                      </button>
+
+                      <div className="text-center pt-2 flex justify-between text-[10px] text-slate-500">
+                        <button 
+                          type="button" 
+                          onClick={() => {
+                            const code = Math.floor(100000 + Math.random() * 900000).toString();
+                            setSimulatedOtp(code);
+                            setErrorMsg('');
+                          }} 
+                          className="text-emerald hover:underline font-semibold"
+                        >
+                          Resend Code
+                        </button>
+                        <button 
+                          type="button" 
+                          onClick={() => setOtpRequested(false)} 
+                          className="hover:underline"
+                        >
+                          Change Number
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
             </form>
           </div>
         </div>

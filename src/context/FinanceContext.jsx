@@ -1,4 +1,5 @@
 import React, { createContext, useState, useEffect } from 'react';
+import { formatIndianRupees } from '../utils/financeUtils';
 
 export const FinanceContext = createContext();
 
@@ -75,59 +76,206 @@ export const FinanceProvider = ({ children }) => {
   const [activePage, setActivePage] = useState('home');
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark');
   const [currency, setCurrency] = useState(() => localStorage.getItem('currency') || '₹');
-  const [isOnboarded, setIsOnboarded] = useState(() => localStorage.getItem('isOnboarded') === 'true');
-  const [startingBalance, setStartingBalance] = useState(() => Number(localStorage.getItem('startingBalance')) || 542850);
+
+  // Auth States
+  const [currentUser, setCurrentUser] = useState(() => {
+    const saved = localStorage.getItem('finovo_current_user');
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  const isLoggedIn = !!currentUser;
+
+  // Core financial states (initialized to guest/empty defaults; loaded dynamically per user)
+  const [isOnboarded, setIsOnboarded] = useState(false);
+  const [startingBalance, setStartingBalance] = useState(0);
+  const [profile, setProfile] = useState({ name: 'Guest User', email: '', age: '', profession: '', timezone: 'IST (UTC+5:30)' });
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [transactions, setTransactions] = useState([]);
+  const [budgets, setBudgets] = useState(DEFAULT_BUDGETS);
+  const [goals, setGoals] = useState([]);
+  const [investments, setInvestments] = useState([]);
+  const [widgets, setWidgets] = useState(DEFAULT_WIDGETS);
   
-  // Profile settings
-  const [profile, setProfile] = useState(() => {
-    const saved = localStorage.getItem('profile');
-    return saved ? JSON.parse(saved) : { name: 'Yogi Patel', email: 'yogi.patel@finovo.in', photo: null, timezone: 'IST (UTC+5:30)', age: '', profession: '' };
-  });
+  // Custom notifications (settings changes, backups, manually posted messages)
+  const [customNotifications, setCustomNotifications] = useState([]);
+  // Final combined notifications computed dynamically
+  const [notifications, setNotifications] = useState([]);
 
-  // Custom Categories
-  const [categories, setCategories] = useState(() => {
-    const saved = localStorage.getItem('categories');
-    return saved ? JSON.parse(saved) : DEFAULT_CATEGORIES;
-  });
+  // Load user data dynamically when currentUser changes
+  useEffect(() => {
+    if (currentUser) {
+      const emailOrPhone = currentUser.email || currentUser.phone;
+      const keyPrefix = `finovo_user_${emailOrPhone}_`;
 
-  // Transaction state
-  const [transactions, setTransactions] = useState(() => {
-    const saved = localStorage.getItem('transactions');
-    return saved ? JSON.parse(saved) : SEED_TRANSACTIONS;
-  });
+      // Check if this is a default pre-populated user and doesn't have any stored data yet
+      const isPrepopulated = emailOrPhone === 'yogi.patel@finovo.in' || 
+                             emailOrPhone === 'yogi.patel@gmail.com' || 
+                             emailOrPhone === 'nilkanth.patel@gmail.com' ||
+                             emailOrPhone === '+91 98765 43210';
 
-  // Budgets state
-  const [budgets, setBudgets] = useState(() => {
-    const saved = localStorage.getItem('budgets');
-    return saved ? JSON.parse(saved) : DEFAULT_BUDGETS;
-  });
+      const hasStoredData = localStorage.getItem(keyPrefix + 'isOnboarded') !== null;
 
-  // Goals state
-  const [goals, setGoals] = useState(() => {
-    const saved = localStorage.getItem('goals');
-    return saved ? JSON.parse(saved) : SEED_GOALS;
-  });
+      if (isPrepopulated && !hasStoredData) {
+        // Seed initial mock data for pre-populated accounts
+        setIsOnboarded(true);
+        setStartingBalance(542850);
+        
+        const initialProfile = { 
+          name: currentUser.name || (emailOrPhone.includes('nilkanth') ? 'Nilkanth Patel' : 'Yogi Patel'), 
+          email: emailOrPhone.includes('@') ? emailOrPhone : 'yogi.patel@finovo.in', 
+          phone: emailOrPhone.includes('@') ? '' : emailOrPhone,
+          age: 28, 
+          profession: 'Software Engineer', 
+          timezone: 'IST (UTC+5:30)' 
+        };
+        setProfile(initialProfile);
+        setCategories(DEFAULT_CATEGORIES);
+        setTransactions(SEED_TRANSACTIONS);
+        setBudgets(DEFAULT_BUDGETS);
+        setGoals(SEED_GOALS);
+        setInvestments(SEED_INVESTMENTS);
+        setWidgets(DEFAULT_WIDGETS);
+        setCustomNotifications([]);
 
-  // Investments state
-  const [investments, setInvestments] = useState(() => {
-    const saved = localStorage.getItem('investments');
-    return saved ? JSON.parse(saved) : SEED_INVESTMENTS;
-  });
+        // Persist to user storage
+        localStorage.setItem(keyPrefix + 'isOnboarded', 'true');
+        localStorage.setItem(keyPrefix + 'startingBalance', '542850');
+        localStorage.setItem(keyPrefix + 'profile', JSON.stringify(initialProfile));
+        localStorage.setItem(keyPrefix + 'categories', JSON.stringify(DEFAULT_CATEGORIES));
+        localStorage.setItem(keyPrefix + 'transactions', JSON.stringify(SEED_TRANSACTIONS));
+        localStorage.setItem(keyPrefix + 'budgets', JSON.stringify(DEFAULT_BUDGETS));
+        localStorage.setItem(keyPrefix + 'goals', JSON.stringify(SEED_GOALS));
+        localStorage.setItem(keyPrefix + 'investments', JSON.stringify(SEED_INVESTMENTS));
+        localStorage.setItem(keyPrefix + 'widgets', JSON.stringify(DEFAULT_WIDGETS));
+        localStorage.setItem(keyPrefix + 'customNotifications', JSON.stringify([]));
+      } else {
+        // Load data from user-scoped keys
+        const getLocal = (key, fallback) => {
+          const saved = localStorage.getItem(keyPrefix + key);
+          if (saved === null) return fallback;
+          try {
+            return JSON.parse(saved);
+          } catch (e) {
+            return saved;
+          }
+        };
 
-  // Widgets configuration (customizable layout)
-  const [widgets, setWidgets] = useState(() => {
-    const saved = localStorage.getItem('widgets');
-    return saved ? JSON.parse(saved) : DEFAULT_WIDGETS;
-  });
+        setIsOnboarded(localStorage.getItem(keyPrefix + 'isOnboarded') === 'true');
+        setStartingBalance(Number(localStorage.getItem(keyPrefix + 'startingBalance')) || 0);
+        setProfile(getLocal('profile', { 
+          name: currentUser.name || (emailOrPhone.includes('@') ? emailOrPhone.split('@')[0] : 'User'), 
+          email: emailOrPhone.includes('@') ? emailOrPhone : '', 
+          phone: emailOrPhone.includes('@') ? '' : emailOrPhone,
+          age: '', 
+          profession: '', 
+          timezone: 'IST (UTC+5:30)' 
+        }));
+        setCategories(getLocal('categories', DEFAULT_CATEGORIES));
+        setTransactions(getLocal('transactions', []));
+        setBudgets(getLocal('budgets', DEFAULT_BUDGETS));
+        setGoals(getLocal('goals', []));
+        setInvestments(getLocal('investments', []));
+        setWidgets(getLocal('widgets', DEFAULT_WIDGETS));
+        setCustomNotifications(getLocal('customNotifications', []));
+      }
+    } else {
+      // Clear/Reset to Guest State
+      setIsOnboarded(false);
+      setStartingBalance(0);
+      setProfile({ name: 'Guest User', email: '', age: '', profession: '', timezone: 'IST (UTC+5:30)' });
+      setCategories(DEFAULT_CATEGORIES);
+      setTransactions([]);
+      setBudgets(DEFAULT_BUDGETS);
+      setGoals([]);
+      setInvestments([]);
+      setWidgets(DEFAULT_WIDGETS);
+      setCustomNotifications([]);
+      setNotifications([]);
+    }
+  }, [currentUser]);
 
-  // Notifications state
-  const [notifications, setNotifications] = useState([
-    { id: 'n1', type: 'info', message: 'Welcome to Finovo! Customize your dashboard inside Settings.', date: new Date().toLocaleDateString(), read: false },
-    { id: 'n2', type: 'success', message: 'Salary of ₹85,000 credited to account.', date: '2026-06-01', read: true },
-    { id: 'n3', type: 'warning', message: 'Shopping budget has exceeded 80% limit!', date: '2026-06-05', read: false }
-  ]);
+  // Persist user-specific states to localStorage on change
+  useEffect(() => {
+    if (currentUser) {
+      const emailOrPhone = currentUser.email || currentUser.phone;
+      const keyPrefix = `finovo_user_${emailOrPhone}_`;
+      localStorage.setItem(keyPrefix + 'isOnboarded', isOnboarded ? 'true' : 'false');
+    }
+  }, [isOnboarded, currentUser]);
 
-  // Sync state to localstorage
+  useEffect(() => {
+    if (currentUser) {
+      const emailOrPhone = currentUser.email || currentUser.phone;
+      const keyPrefix = `finovo_user_${emailOrPhone}_`;
+      localStorage.setItem(keyPrefix + 'startingBalance', startingBalance.toString());
+    }
+  }, [startingBalance, currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const emailOrPhone = currentUser.email || currentUser.phone;
+      const keyPrefix = `finovo_user_${emailOrPhone}_`;
+      localStorage.setItem(keyPrefix + 'profile', JSON.stringify(profile));
+    }
+  }, [profile, currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const emailOrPhone = currentUser.email || currentUser.phone;
+      const keyPrefix = `finovo_user_${emailOrPhone}_`;
+      localStorage.setItem(keyPrefix + 'categories', JSON.stringify(categories));
+    }
+  }, [categories, currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const emailOrPhone = currentUser.email || currentUser.phone;
+      const keyPrefix = `finovo_user_${emailOrPhone}_`;
+      localStorage.setItem(keyPrefix + 'transactions', JSON.stringify(transactions));
+    }
+  }, [transactions, currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const emailOrPhone = currentUser.email || currentUser.phone;
+      const keyPrefix = `finovo_user_${emailOrPhone}_`;
+      localStorage.setItem(keyPrefix + 'budgets', JSON.stringify(budgets));
+    }
+  }, [budgets, currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const emailOrPhone = currentUser.email || currentUser.phone;
+      const keyPrefix = `finovo_user_${emailOrPhone}_`;
+      localStorage.setItem(keyPrefix + 'goals', JSON.stringify(goals));
+    }
+  }, [goals, currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const emailOrPhone = currentUser.email || currentUser.phone;
+      const keyPrefix = `finovo_user_${emailOrPhone}_`;
+      localStorage.setItem(keyPrefix + 'investments', JSON.stringify(investments));
+    }
+  }, [investments, currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const emailOrPhone = currentUser.email || currentUser.phone;
+      const keyPrefix = `finovo_user_${emailOrPhone}_`;
+      localStorage.setItem(keyPrefix + 'widgets', JSON.stringify(widgets));
+    }
+  }, [widgets, currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      const emailOrPhone = currentUser.email || currentUser.phone;
+      const keyPrefix = `finovo_user_${emailOrPhone}_`;
+      localStorage.setItem(keyPrefix + 'customNotifications', JSON.stringify(customNotifications));
+    }
+  }, [customNotifications, currentUser]);
+
+  // Global app themes and currency settings sync
   useEffect(() => {
     localStorage.setItem('theme', theme);
     const body = document.body;
@@ -142,83 +290,176 @@ export const FinanceProvider = ({ children }) => {
     localStorage.setItem('currency', currency);
   }, [currency]);
 
+  // Dynamic notifications engine matching actual dashboard numbers & transaction logs
   useEffect(() => {
-    localStorage.setItem('profile', JSON.stringify(profile));
-  }, [profile]);
+    if (!currentUser) {
+      setNotifications([]);
+      return;
+    }
 
-  useEffect(() => {
-    localStorage.setItem('categories', JSON.stringify(categories));
-  }, [categories]);
+    const emailOrPhone = currentUser.email || currentUser.phone;
+    const readKey = `finovo_user_${emailOrPhone}_read_notifications`;
+    const readIds = JSON.parse(localStorage.getItem(readKey) || '[]');
 
-  useEffect(() => {
-    localStorage.setItem('transactions', JSON.stringify(transactions));
-    checkBudgetsAndNotify();
-  }, [transactions]);
+    const list = [];
+    
+    // 1. Balance Warning
+    const allIncomes = transactions.filter(t => t.type === 'income').reduce((acc, curr) => acc + curr.amount, 0);
+    const allExpenses = transactions.filter(t => t.type === 'expense').reduce((acc, curr) => acc + curr.amount, 0);
+    const totalBalance = startingBalance + allIncomes - allExpenses;
+    
+    if (isOnboarded && totalBalance < 15000) {
+      list.push({
+        id: 'n-low-balance',
+        type: 'danger',
+        message: `⚠️ Low balance alert! Your total balance is ${formatIndianRupees(totalBalance, currency)}.`,
+        date: new Date().toLocaleDateString()
+      });
+    }
 
-  useEffect(() => {
-    localStorage.setItem('budgets', JSON.stringify(budgets));
-    checkBudgetsAndNotify();
-  }, [budgets]);
+    // 2. Recent Incomes Credited
+    transactions.filter(t => t.type === 'income').forEach(t => {
+      list.push({
+        id: `n-income-${t.id}`,
+        type: 'success',
+        message: `💰 Income of ${formatIndianRupees(t.amount, currency)} credited to ledger (${t.category}).`,
+        date: t.date
+      });
+    });
 
-  useEffect(() => {
-    localStorage.setItem('goals', JSON.stringify(goals));
-  }, [goals]);
+    // 3. High Value Expense Alarms (>= ₹10,000)
+    transactions.filter(t => t.type === 'expense' && t.amount >= 10000).forEach(t => {
+      list.push({
+        id: `n-high-expense-${t.id}`,
+        type: 'warning',
+        message: `💸 High expense alert: spent ${formatIndianRupees(t.amount, currency)} on ${t.category}.`,
+        date: t.date
+      });
+    });
 
-  useEffect(() => {
-    localStorage.setItem('investments', JSON.stringify(investments));
-  }, [investments]);
-
-  useEffect(() => {
-    localStorage.setItem('widgets', JSON.stringify(widgets));
-  }, [widgets]);
-
-  // Logic to monitor budgets and auto-trigger warnings
-  const checkBudgetsAndNotify = () => {
-    // Group monthly expenses by category for June 2026 (current month in seed)
+    // 4. Budget Monitoring (>80% warning / >100% exceeded)
     const currentMonthExpenses = {};
+    // Check expenses matching this month
     transactions
-      .filter(t => t.type === 'expense' && t.date.startsWith('2026-06'))
+      .filter(t => t.type === 'expense')
       .forEach(t => {
-        // Find mapped category
-        let catName = t.category;
-        currentMonthExpenses[catName] = (currentMonthExpenses[catName] || 0) + t.amount;
+        currentMonthExpenses[t.category] = (currentMonthExpenses[t.category] || 0) + t.amount;
       });
 
-    const newNotifications = [];
     Object.keys(budgets).forEach(cat => {
       const budgetLimit = budgets[cat];
       const spent = currentMonthExpenses[cat] || 0;
-      if (budgetLimit > 0 && spent >= budgetLimit * 0.8) {
+      if (budgetLimit > 0) {
         const percent = Math.round((spent / budgetLimit) * 100);
-        const exists = notifications.some(n => n.message.includes(`budget for ${cat}`) && n.message.includes(`${percent}%`));
-        if (!exists) {
-          newNotifications.push({
-            id: `nb-${cat}-${Date.now()}`,
-            type: spent > budgetLimit ? 'danger' : 'warning',
-            message: spent > budgetLimit 
-              ? `⚠️ Budget Exceeded! You spent ${percent}% of your budget for ${cat}.` 
-              : `⚠️ Budget Warning! You spent ${percent}% of your budget for ${cat}.`,
-            date: new Date().toLocaleDateString(),
-            read: false
+        if (percent >= 100) {
+          list.push({
+            id: `n-budget-exceeded-${cat}`,
+            type: 'danger',
+            message: `🚨 Budget exceeded! You spent ${percent}% (${formatIndianRupees(spent, currency)} of ${formatIndianRupees(budgetLimit, currency)}) on ${cat}.`,
+            date: new Date().toLocaleDateString()
+          });
+        } else if (percent >= 80) {
+          list.push({
+            id: `n-budget-warning-${cat}`,
+            type: 'warning',
+            message: `⚠️ Budget warning: You used ${percent}% (${formatIndianRupees(spent, currency)} of ${formatIndianRupees(budgetLimit, currency)}) on ${cat}.`,
+            date: new Date().toLocaleDateString()
           });
         }
       }
     });
 
-    if (newNotifications.length > 0) {
-      setNotifications(prev => [...newNotifications, ...prev]);
+    // 5. Savings Goals milestones
+    goals.forEach(g => {
+      const percent = Math.round((g.savedAmount / g.targetAmount) * 100);
+      if (percent >= 100) {
+        list.push({
+          id: `n-goal-completed-${g.id}`,
+          type: 'success',
+          message: `🎯 Target achieved! Saved 100% of your ${formatIndianRupees(g.targetAmount, currency)} goal for "${g.name}".`,
+          date: new Date().toLocaleDateString()
+        });
+      } else if (percent >= 50) {
+        list.push({
+          id: `n-goal-halfway-${g.id}`,
+          type: 'info',
+          message: `⭐ Goal milestone: You have saved ${percent}% (${formatIndianRupees(g.savedAmount, currency)}) of your target for "${g.name}".`,
+          date: new Date().toLocaleDateString()
+        });
+      }
+    });
+
+    // 6. Investments Growth Performance
+    const totalInvested = investments.reduce((acc, curr) => acc + curr.investedAmount, 0);
+    const totalCurrentVal = investments.reduce((acc, curr) => acc + curr.currentValue, 0);
+    if (totalInvested > 0) {
+      const growth = ((totalCurrentVal - totalInvested) / totalInvested) * 100;
+      if (growth >= 5) {
+        list.push({
+          id: 'n-investment-growth',
+          type: 'success',
+          message: `📈 Market growth: Your portfolio valuation has grown by +${growth.toFixed(1)}% to ${formatIndianRupees(totalCurrentVal, currency)}.`,
+          date: new Date().toLocaleDateString()
+        });
+      } else if (growth <= -5) {
+        list.push({
+          id: 'n-investment-drop',
+          type: 'warning',
+          message: `📉 Valuation warning: Portfolio holdings are down by ${growth.toFixed(1)}% to ${formatIndianRupees(totalCurrentVal, currency)}.`,
+          date: new Date().toLocaleDateString()
+        });
+      }
     }
+
+    // Merge customNotifications and match read states
+    const combined = [...customNotifications, ...list].map(item => ({
+      ...item,
+      read: item.read || readIds.includes(item.id)
+    }));
+
+    setNotifications(combined);
+  }, [transactions, budgets, goals, investments, startingBalance, customNotifications, currentUser, isOnboarded, currency]);
+
+  // Auth Operations
+  const loginUser = (emailOrPhone, method, name = '') => {
+    const user = {
+      email: emailOrPhone.includes('@') ? emailOrPhone.toLowerCase() : '',
+      phone: emailOrPhone.includes('@') ? '' : emailOrPhone,
+      name: name || (emailOrPhone.includes('@') ? emailOrPhone.split('@')[0] : 'User'),
+      method
+    };
+    localStorage.setItem('finovo_current_user', JSON.stringify(user));
+    setCurrentUser(user);
+    addNotification('success', `Welcome back, ${user.name}! Accessing your dashboard.`);
+    return true;
+  };
+
+  const signupUser = (emailOrPhone, name, password) => {
+    const emailKey = `finovo_auth_${emailOrPhone.toLowerCase()}`;
+    localStorage.setItem(emailKey, JSON.stringify({ emailOrPhone, name, password }));
+    
+    const user = {
+      email: emailOrPhone.includes('@') ? emailOrPhone.toLowerCase() : '',
+      phone: emailOrPhone.includes('@') ? '' : emailOrPhone,
+      name,
+      method: 'email'
+    };
+    localStorage.setItem('finovo_current_user', JSON.stringify(user));
+    setCurrentUser(user);
+    addNotification('success', `Account created successfully. Welcome to Finovo, ${name}!`);
+    return true;
+  };
+
+  const logoutUser = () => {
+    localStorage.removeItem('finovo_current_user');
+    setCurrentUser(null);
+    setActivePage('home');
   };
 
   // Transaction CRUD handlers
   const addTransaction = (t) => {
     const newTx = { ...t, id: `t-${Date.now()}` };
     setTransactions(prev => [newTx, ...prev]);
-    
-    // Add success notification
-    if (t.type === 'income') {
-      addNotification('success', `Salary/Income of ${currency}${t.amount} credited.`);
-    }
   };
 
   const deleteTransaction = (id) => {
@@ -262,9 +503,6 @@ export const FinanceProvider = ({ children }) => {
     setGoals(prev => prev.map(g => {
       if (g.id === id) {
         const updatedSaved = g.savedAmount + Number(saveAmount);
-        if (updatedSaved >= g.targetAmount) {
-          addNotification('success', `🎯 Congratulations! You have reached your savings goal: "${g.name}"!`);
-        }
         return { ...g, savedAmount: Math.min(updatedSaved, g.targetAmount) };
       }
       return g;
@@ -281,18 +519,39 @@ export const FinanceProvider = ({ children }) => {
   };
 
   const addNotification = (type, message) => {
-    setNotifications(prev => [
-      { id: `n-${Date.now()}`, type, message, date: new Date().toLocaleDateString(), read: false },
-      ...prev
-    ]);
+    if (!currentUser) return;
+    const newNotif = {
+      id: `n-custom-${Date.now()}`,
+      type,
+      message,
+      date: new Date().toLocaleDateString(),
+      read: false
+    };
+    setCustomNotifications(prev => [newNotif, ...prev]);
   };
 
   const markNotificationRead = (id) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    if (!currentUser) return;
+    const emailOrPhone = currentUser.email || currentUser.phone;
+    const readKey = `finovo_user_${emailOrPhone}_read_notifications`;
+    const readIds = JSON.parse(localStorage.getItem(readKey) || '[]');
+    if (!readIds.includes(id)) {
+      const updated = [...readIds, id];
+      localStorage.setItem(readKey, JSON.stringify(updated));
+      // Trigger a state change to re-evaluate
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+    }
   };
 
   const clearAllNotifications = () => {
-    setNotifications([]);
+    if (!currentUser) return;
+    const emailOrPhone = currentUser.email || currentUser.phone;
+    const readKey = `finovo_user_${emailOrPhone}_read_notifications`;
+    const unread = notifications.filter(n => !n.read);
+    const readIds = JSON.parse(localStorage.getItem(readKey) || '[]');
+    const updated = [...readIds, ...unread.map(n => n.id)];
+    localStorage.setItem(readKey, JSON.stringify(updated));
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
   };
 
   const updateWidgetLayout = (newWidgets) => {
@@ -312,7 +571,7 @@ export const FinanceProvider = ({ children }) => {
       addNotification('success', 'Backup restored successfully.');
       return true;
     } catch (e) {
-      addNotification('danger', 'Invalid backup file format.');
+      addNotification('danger', 'Invalid data format.');
       return false;
     }
   };
@@ -320,11 +579,11 @@ export const FinanceProvider = ({ children }) => {
   const onboardUser = (data) => {
     const startBal = Number(data.startingBalance) || 0;
     setStartingBalance(startBal);
-    localStorage.setItem('startingBalance', startBal.toString());
 
     const updatedProfile = {
       name: data.name,
-      email: data.email || 'user@finovo.in',
+      email: data.email || (currentUser.email || 'user@finovo.in'),
+      phone: currentUser.phone || '',
       age: Number(data.age),
       profession: data.profession,
       timezone: 'IST (UTC+5:30)'
@@ -367,7 +626,6 @@ export const FinanceProvider = ({ children }) => {
     }
 
     setIsOnboarded(true);
-    localStorage.setItem('isOnboarded', 'true');
     addNotification('success', `Welcome, ${data.name}! Your customizable dashboard is now set up.`);
   };
 
@@ -379,6 +637,11 @@ export const FinanceProvider = ({ children }) => {
       setTheme,
       currency,
       setCurrency,
+      currentUser,
+      isLoggedIn,
+      loginUser,
+      signupUser,
+      logoutUser,
       profile,
       setProfile,
       categories,
@@ -415,3 +678,4 @@ export const FinanceProvider = ({ children }) => {
     </FinanceContext.Provider>
   );
 };
+
